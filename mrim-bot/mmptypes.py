@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
+# Got from https://github.com/zinid/mrim/blob/master/src/mmptypes.py
 PROTO_VERSION_MAJOR = 1L
 PROTO_VERSION_MINOR = 9L
 PROTO_VERSION = (PROTO_VERSION_MAJOR << 16) | (PROTO_VERSION_MINOR)
 
-CS_MAGIC = 0xDEADBEEFL      # Клиентский Magic ( C <-> S )
+CS_MAGIC = 0xDEADBEEFL      
 
 MRIM_CS_HELLO = 0x1001      # C -> S
 MRIM_CS_HELLO_ACK = 0x1002  # S -> C
@@ -272,7 +273,6 @@ MAX_CLIENT_DESCRIPTION = 256
         LPS client description //max 256
 '''
 
-# Not described in protocol! (mail.ru sucks)
 #MRIM_CS_FILE_TRANSFER = 0x1026         # S -> C
 MRIM_CS_SMS = 0x1039
 '''

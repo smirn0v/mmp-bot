@@ -19,25 +19,26 @@ class MRIMProtocol(protocol.Protocol,MRIMDispatcherMixin):
     """
 
     def __init__(self):
+        self.buffer = ""
         self.mode = MRIMMode.Header
         self.seq = 1
         self.supportedPackets = [MMPServerHelloAckPacket]
 
     def connectionMade(self):
-        log.msg("connected")
+        print "[+] Connected"
         packet = MMPClientHelloPacket(self.createHeader())
         self.transport.write(packet.binary_data())
     
-    def connectionLost(self):
+    def connectionLost(self,reason):
         pass
 
     def dataReceived(self,data):
         self.buffer += data
         handlers = { 
-                     MRIMMode.Header: extractHeader,
-                     MRIMMode.Body: extractBody
+                     MRIMMode.Header: self.extractHeader,
+                     MRIMMode.Body: self.extractBody
                    }
-        handlers[self.mode](self)
+        handlers[self.mode]()
     
     def createHeader(self):
         header = MMPHeader(seq = self.seq)
@@ -51,8 +52,17 @@ class MRIMProtocol(protocol.Protocol,MRIMDispatcherMixin):
         self.buffer = self.buffer[MMPHeader.size:]
         self.header = MMPHeader.from_binary_data(header_data)
         self.mode = MRIMMode.Body
-        log.msg("header received %s"%header)
+        print "[+] Header received %s"%self.header
+        self.extractBody()
 
     def extractBody(self):
         if len(self.buffer) < self.header.dlen:
             return
+        print "[+] Body received, len = %d"%self.header.dlen
+        self.buffer = self.buffer[self.header.dlen:]
+        self.mode = MRIMMode.Header 
+        self.extractHeader()
+
+class MRIMClientFactory(protocol.ClientFactory):
+    def buildProtocol(self, address):
+        return MRIMProtocol()
