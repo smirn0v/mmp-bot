@@ -3,25 +3,25 @@ from twisted.internet import reactor, protocol, task
 from twisted.persisted import styles
 from twisted.protocols import basic
 
-class MRIMBaseHandler(object):
+class MMPBaseHandler(object):
     def __init__(self, protocol):
         self.auto_remove_handler = True
         self.protocol = protocol
 
-class MRIMLogin2AckHandler(MRIMBaseHandler):
+class MMPLogin2AckHandler(MMPBaseHandler):
     def __init__(self, protocol, seq):
-        super(MRIMLogin2AckHandler,self).__init__(protocol)
+        super(MMPLogin2AckHandler,self).__init__(protocol)
         self.seq = seq
 
     def canHandlePacket(self,packet):
         return packet.header.seq == self.seq and isinstance(packet,MMPServerLoginAckPacket) 
 
     def handlePacket(self,packet):
-        print "Login ack received"
+        print "[+] Logged in"
 
-class MRIMLogin2RejHandler(MRIMBaseHandler):
+class MMPLogin2RejHandler(MMPBaseHandler):
     def __init__(self,protocol,seq):
-        super(MRIMLogin2RejHandler,self).__init__(protocol)
+        super(MMPLogin2RejHandler,self).__init__(protocol)
         self.seq = seq 
 
     def canHandlePacket(self,packet):
@@ -30,22 +30,50 @@ class MRIMLogin2RejHandler(MRIMBaseHandler):
     def handlePacket(self,packet):
         print "[-] Login rejected: %s"%packet.reason
 
-class MRIMHelloAckHandler(MRIMBaseHandler):
+class MMPHelloAckHandler(MMPBaseHandler):
     def __init__(self, protocol, seq):
-        super(MRIMHelloAckHandler,self).__init__(protocol)
+        super(MMPHelloAckHandler,self).__init__(protocol)
         self.seq = seq
     
     def canHandlePacket(self,packet):
         return packet.header.seq == self.seq and isinstance(packet,MMPServerHelloAckPacket) 
 
     def handlePacket(self,packet):
+        self.protocol.startHeartbeat(packet.interval)
         header = self.protocol.createHeader()
         packet = MMPClientLogin2Packet(header,"johann-the-builder@mail.ru","buildpleasemail")
-        self.protocol.addHandler(MRIMLogin2RejHandler(self.protocol,header.seq))
-        self.protocol.addHandler(MRIMLogin2AckHandler(self.protocol,header.seq))
+        self.protocol.addHandler(MMPLogin2RejHandler(self.protocol,header.seq))
+        self.protocol.addHandler(MMPLogin2AckHandler(self.protocol,header.seq))
         self.protocol.sendPacket(packet)
 
-class MRIMDispatcherMixin(object):
+class MMPMessageAckHandler(MMPBaseHandler):
+    def __init__(self,protocol):
+        super(MMPMessageAckHandler,self).__init__(protocol)
+        self.auto_remove_handler = False
+    
+    def canHandlePacket(self,packet):
+        return isinstance(packet,MMPServerMessageAckPacket)
+
+    def handlePacket(self,packet):
+        header = self.protocol.createHeader()
+        header.seq = packet.header.seq
+        msgReceivedPacket = MMPClientMessageRecv(header,packet.from_email,packet.msgid)
+        self.protocol.sendPacket(msgReceivedPacket)
+
+class MMPIncomingAuthorizationHandler(MMPBaseHandler):
+    def __init__(self,protocol):
+        super(MMPMessageAckHandler,self).__init__(protocol)
+        self.auto_remove_handler = False
+
+    def canHandlePacket(self,packet):
+        return packet.header.seq == self.seq and \
+               isinstance(packet,MMPServerMessageAckPacket) and \
+               packet.flag_set(MESSAGE_FLAG_AUTHORIZE)
+
+    def handlePacket(self,packet):
+        print "[+] Authorization request received from %s"%packet.from_email 
+
+class MMPDispatcherMixin(object):
 
     def addHandler(self,handler):
         self.handlers += [handler]
@@ -61,8 +89,6 @@ class MRIMDispatcherMixin(object):
 
         if not packet: return
 
-        print "[+] Packet parsed"        
-
         packetHandlers = [h for h in self.handlers if h.canHandlePacket(packet)]
 
         for handler in packetHandlers: 
@@ -70,28 +96,32 @@ class MRIMDispatcherMixin(object):
             if handler.auto_remove_handler: 
                 self.handlers.remove(handler)
 
-class MRIMMode:
+class MMPMode:
     Header= 1
     Body= 2 
 
-class MRIMProtocol(protocol.Protocol,MRIMDispatcherMixin):
+class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
     """
-    MRIM protocol implementation
+    MMP protocol implementation
     """
 
     def __init__(self):
         self.handlers = []
         self.supported_server_packets = [MMPServerHelloAckPacket,
                                          MMPServerLoginAckPacket,
-                                         MMPServerLoginRejPacket]
+                                         MMPServerLoginRejPacket,
+                                         MMPServerMessageAckPacket,
+                                         MMPServerContactListPacket]
         self.buffer = ""
-        self.mode = MRIMMode.Header
+        self.mode = MMPMode.Header
         self.seq = 1
+            
+        self.addHandler(MMPMessageAckHandler(self))
 
     def connectionMade(self):
         print "[+] Connected"
         packet = MMPClientHelloPacket(self.createHeader())
-        self.addHandler(MRIMHelloAckHandler(self,packet.header.seq))
+        self.addHandler(MMPHelloAckHandler(self,packet.header.seq))
         self.sendPacket(packet)
     
     def connectionLost(self,reason):
@@ -100,8 +130,8 @@ class MRIMProtocol(protocol.Protocol,MRIMDispatcherMixin):
     def dataReceived(self,data):
         self.buffer += data
         handlers = { 
-                     MRIMMode.Header: self._extractHeader,
-                     MRIMMode.Body: self._extractBody
+                     MMPMode.Header: self._extractHeader,
+                     MMPMode.Body: self._extractBody
                    }
         handlers[self.mode]()
     
@@ -113,8 +143,14 @@ class MRIMProtocol(protocol.Protocol,MRIMDispatcherMixin):
     def sendPacket(self,packet):
        self.transport.write(packet.binary_data())
 
-    def startHeartBeat(self,interval):
-        pass
+    def startHeartbeat(self,interval):
+        heartbeat = task.LoopingCall(self._sendHeartbeat)
+        heartbeat.start(interval, now = False)
+
+    def _sendHeartbeat(self):
+        header = self.createHeader()
+        packet = MMPClientPingPacket(header)
+        self.sendPacket(packet)
 
     def _extractHeader(self):
         if len(self.buffer) < MMPHeader.size:
@@ -122,7 +158,7 @@ class MRIMProtocol(protocol.Protocol,MRIMDispatcherMixin):
         header_data = self.buffer[:MMPHeader.size]  
         self.buffer = self.buffer[MMPHeader.size:]
         self.header = MMPHeader.from_binary_data(header_data)
-        self.mode = MRIMMode.Body
+        self.mode = MMPMode.Body
         print "[+] Header received %s"%self.header
         self._extractBody()
 
@@ -132,10 +168,13 @@ class MRIMProtocol(protocol.Protocol,MRIMDispatcherMixin):
         print "[+] Body received, len = %d"%self.header.dlen
         payload = self.buffer[:self.header.dlen]
         self.buffer = self.buffer[self.header.dlen:]
-        self.mode = MRIMMode.Header 
+        self.mode = MMPMode.Header 
+
+        print "[+] Payload: %s"%payload.encode('hex')
+
         self.handlePacket(self.header,payload)
         self._extractHeader()
 
-class MRIMClientFactory(protocol.ClientFactory):
+class MMPClientFactory(protocol.ClientFactory):
     def buildProtocol(self, address):
-        return MRIMProtocol()
+        return MMPProtocol()

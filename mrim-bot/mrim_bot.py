@@ -1,5 +1,5 @@
 from twisted.internet import reactor
-import mrim_protocol
+import mmp_protocol
 import telnetlib
 import sys
 
@@ -27,7 +27,7 @@ def main():
     
     print "[+] Host = %s; Port = %d"%(host,int(port))
 
-    reactor.connectTCP(host, port, mrim_protocol.MRIMClientFactory())
+    reactor.connectTCP(host, port, mmp_protocol.MMPClientFactory())
     reactor.run()
     
 if __name__ == "__main__":

@@ -9,18 +9,6 @@ class MMPWrongHeaderData(Exception):
 class MMPMalformedPacket(Exception):
     pass
 
-def unpack_lps(data):
-    size_length = struct.calcsize('I')
-    if len(data) < size_length:
-        raise MMPMalformedPacket,"Can't extract string from data"
-    string_length = struct.unpack('I',data[:size_length])[0]
-    data = data[size_length:] 
-    if len(data) < string_length:
-        raise MMPMalformedPacket("Incorrect string length received (string length = %d data length = %d)"%(string_length,len(data)))
-    string = struct.unpack("%ds"%string_length,data[:string_length])
-    data = data[string_length:]
-    return string
-
 class MMPHeader(object):
     size = 44 # usual MMP header size as stated in 
               # protocol specification
@@ -65,6 +53,74 @@ class MMPHeader(object):
                                              self.dlen,
                                              *([0]*18))
 
+class MMPGroup(object):
+    def __init__(self,flags,name):
+        self.flags = flags
+        self.name = name
+
+class MMPContact(object):
+    def __init__(self,flags,group,address,nickname,server_flags,status):
+        self.flags = flags
+        self.group = group
+        self.address = address
+        self.nickname = nickname
+        self.server_flags = server_flags
+        self.status = status
+
+class PackingMixin(object):
+    def unpack_lps(self):
+        size_length = struct.calcsize('I')
+        if len(self.binary_data) < size_length:
+            raise MMPMalformedPacket,"Can't extract string from binary_data"
+        string_length = struct.unpack('I',self.binary_data[:size_length])[0]
+        self.binary_data = self.binary_data[size_length:] 
+        if len(self.binary_data) < string_length:
+            raise MMPMalformedPacket,"Incorrect string length received"
+        string = struct.unpack("%ds"%string_length,self.binary_data[:string_length])[0]
+        self.binary_data = self.binary_data[string_length:]
+        return string
+
+    def unpack_uint(self):
+        size = struct.calcsize('I')
+        if len(self.binary_data) < size:
+            raise MMPMalformedPacket,"Can't extract unsinged int, not enough binary_data"
+        result = struct.unpack('I',self.binary_data[:size])[0]
+        self.binary_data = self.binary_data[size:] 
+        return result
+
+    def unpack_zstring(self):
+        ''' unpack zero-ended string '''
+        zero_index = self.binary_data.index('\0')
+        result = self.binary_data[:zero_index]
+        self.binary_data = self.binary_data[zero_index+1:]
+        return result
+
+    def unpack_with_mask(self,mask):
+        if mask:
+            print "mask = %s"%mask
+        result = []
+        for symbol in mask:
+            if symbol=='u': result.append(self.unpack_uint())
+            elif symbol=='s': result.append(self.unpack_lps())
+            elif symbol=='z': result.append(self.unpack_zstring())
+            else: raise MMPMalformedPacket,"Unknown mask"
+        return tuple(result)
+
+    def pack_lps(self,string):
+        return struct.pack('I',len(string)) + string
+
+    def pack_uint(self,value):
+        return struct.pack('I',value)
+
+class MMPClientPingPacket(object):
+    msg = MRIM_CS_PING
+    def __init__(self,header):
+        self.header = header
+        self.header.dlen = 0
+
+    def binary_data(self):
+        return self.header.binary_data()
+
 class MMPClientHelloPacket(object):
     msg = MRIM_CS_HELLO
     def __init__(self,header):
@@ -74,38 +130,90 @@ class MMPClientHelloPacket(object):
     def binary_data(self):
         return self.header.binary_data()
 
-class MMPClientLogin2Packet(object):
+class MMPClientLogin2Packet(PackingMixin):
     msg = MRIM_CS_LOGIN2
     def __init__(self,header,email,password):
         self.header = header
         self.header.msg = self.__class__.msg
         self.email = email
         self.password = password
-        self.header.dlen = struct.calcsize('4I')+len(email)+len(password)+len(MMP_CLIENT_STRING)
+        self.header.dlen = len(self.binary_data()) - MMPHeader.size 
     def binary_data(self):
-        header_data = self.header.binary_data()
-        payload = ""
-        payload += struct.pack('I',len(self.email)) + self.email
-        payload += struct.pack('I',len(self.password)) + self.password
-        payload += struct.pack('I',STATUS_ONLINE)
-        payload += struct.pack('I',len(MMP_CLIENT_STRING)) + MMP_CLIENT_STRING
-        return header_data+payload
+        data = self.header.binary_data()
+        data += self.pack_lps(self.email)
+        data += self.pack_lps(self.password)
+        data += self.pack_uint(STATUS_ONLINE)
+        data += self.pack_lps(MMP_CLIENT_STRING)
+        return data
 
-class MMPServerHelloAckPacket(object):
+class MMPClientMessageRecvPacket(PackingMixin):
+    msg = MRIM_CS_MESSAGE_RECV
+    def __init__(self,header,from_email,msgid):
+        self.header = header
+        self.header.msg = self.__class__.msg 
+        self.from_email = from_email
+        self.msgid = msgid
+        self.header.dlen = len(self.binary_data()) - MMPHeader.size
+    def binary_data(self):
+        data = self.header.binary_data()
+        data += self.pack_lps(self.from_email) 
+        data += self.pack_uint(msgid)
+        return data
+
+class MMPServerHelloAckPacket(PackingMixin):
     msg = MRIM_CS_HELLO_ACK
     def __init__(self, header, binary_data):
         self.header = header
-        if len(binary_data) != struct.calcsize('I'):
-            raise MMPMalformedPacket, "Wrong size of HelloAck payload"
-        self.interval = struct.unpack('I',binary_data)
+        self.binary_data = binary_data
+        self.interval = self.unpack_uint()
 
-class MMPServerLoginAckPacket(object):
+class MMPServerLoginAckPacket(PackingMixin):
     msg = MRIM_CS_LOGIN_ACK
     def __init__(self, header, binary_data):
         self.header = header
 
-class MMPServerLoginRejPacket(object):
+class MMPServerLoginRejPacket(PackingMixin):
     msg = MRIM_CS_LOGIN_REJ
     def __init__(self, header, binary_data):
         self.header = header
+        self.binary_data = binary_data
         self.reason = unpack_lps(binary_data) 
+
+class MMPServerMessageAckPacket(PackingMixin):
+    msg = MRIM_CS_MESSAGE_ACK
+    def __init__(self, header, binary_data):
+        self.header = header
+        self.binary_data = binary_data
+        self.msgid = self.unpack_uint()
+        self.flags = self.unpack_uint()
+        self.from_email = self.unpack_lps()
+        self.message = self.unpack_lps()
+        if self.flag_set(MESSAGE_FLAG_RTF):
+            self.rtf_message = self.unpack_lps()
+    def flag_set(self,flag):
+        return (self.flags | flag) == self.flags
+
+class MMPServerContactListPacket(PackingMixin):
+    msg = MRIM_CS_CONTACT_LIST2
+    def __init__(self, header, binary_data):
+        self.header = header
+        self.binary_data = binary_data
+        self.status = self.unpack_uint()
+        self.groups_number = self.unpack_uint()
+        self.group_mask = self.unpack_lps()
+        self.contacts_mask = self.unpack_lps()
+
+        self.groups = []
+        self.contacts = []
+        for i in range(self.groups_number):
+            self.groups += [MMPGroup(self.unpack_uint(),self.unpack_lps())]
+            self.unpack_with_mask(self.group_mask[2:])
+        while len(self.binary_data) > 0:
+            flags = self.unpack_uint()
+            group = self.unpack_uint()
+            address = self.unpack_lps()
+            nick = self.unpack_lps()
+            server_flags = self.unpack_uint()
+            status = self.unpack_uint()
+            self.contacts += [MMPContact(flags,group,address,nick,server_flags,status)]
+            self.unpack_with_mask(self.contacts_mask[6:])
