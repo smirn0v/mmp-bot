@@ -77,6 +77,7 @@ class PackingMixin(object):
         if len(self.binary_data) < string_length:
             raise MMPMalformedPacket,"Incorrect string length received"
         string = struct.unpack("%ds"%string_length,self.binary_data[:string_length])[0]
+        string = string.decode('cp1251').encode('utf8')
         self.binary_data = self.binary_data[string_length:]
         return string
 
@@ -91,7 +92,7 @@ class PackingMixin(object):
     def unpack_zstring(self):
         ''' unpack zero-ended string '''
         zero_index = self.binary_data.index('\0')
-        result = self.binary_data[:zero_index]
+        result = self.binary_data[:zero_index].decode('cp1251').encode('utf8')
         self.binary_data = self.binary_data[zero_index+1:]
         return result
 
@@ -109,6 +110,27 @@ class PackingMixin(object):
 
     def pack_uint(self,value):
         return struct.pack('I',value)
+
+class MMPClientMessagePacket(PackingMixin):
+    msg = MRIM_CS_MESSAGE
+    def __init__(self,header,flags,to_email,message):
+        """ 
+        message should be given in ascii
+        rtf messages not supported
+        """
+        self.header = header
+        self.header.msg = self.__class__.msg
+        self.flags = flags
+        self.to_email = to_email
+        self.message = message
+        self.header.dlen = len(self.binary_data()) - MMPHeader.size
+
+    def binary_data(self):
+        data  = self.header.binary_data()
+        data += self.pack_uint(self.flags) 
+        data += self.pack_lps(self.to_email)
+        data += self.pack_lps(self.message)
+        return data
 
 class MMPClientAuthorizePacket(PackingMixin):
     msg = MRIM_CS_AUTHORIZE
@@ -201,6 +223,11 @@ class MMPServerMessageAckPacket(PackingMixin):
             self.rtf_message = self.unpack_lps()
     def flag_set(self,flag):
         return (self.flags | flag) == self.flags
+    def simple_message(self):
+        return  not self.flag_set(MESSAGE_FLAG_SYSTEM)  and \
+                not self.flag_set(MESSAGE_FLAG_CONTACT) and \
+                not self.flag_set(MESSAGE_FLAG_NOTIFY) and \
+                not self.flag_set(MESSAGE_FLAG_AUTHORIZE)
 
 class MMPServerContactListPacket(PackingMixin):
     msg = MRIM_CS_CONTACT_LIST2

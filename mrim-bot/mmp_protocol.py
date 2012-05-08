@@ -3,6 +3,31 @@ from twisted.internet import reactor, protocol, task
 from twisted.persisted import styles
 from twisted.protocols import basic
 
+class MMPCallbackBase(object):
+    def __init__(self):
+        self.protocol = None
+    def loginPassword(self):
+        """ 
+        return tuple ("email","password")
+        that should be used during login process
+        """
+    def loggedIn(self):
+        """
+        called on successfull login
+        """
+    def faildedToLogin(self,reason):
+        """
+        called in case of login was failed
+        """
+    def message(self,from_email,message):
+        """
+        called if message received
+        """
+    def authorizationRequest(self,from_email):
+        """
+        called if authorization request was received
+        """
+
 class MMPBaseHandler(object):
     def __init__(self, protocol):
         self.auto_remove_handler = True
@@ -17,7 +42,7 @@ class MMPLogin2AckHandler(MMPBaseHandler):
         return packet.header.seq == self.seq and isinstance(packet,MMPServerLoginAckPacket) 
 
     def handlePacket(self,packet):
-        print "[+] Logged in"
+        self.protocol.callback.loggedIn()
 
 class MMPLogin2RejHandler(MMPBaseHandler):
     def __init__(self,protocol,seq):
@@ -28,7 +53,7 @@ class MMPLogin2RejHandler(MMPBaseHandler):
         return packet.header.seq == self.seq and isinstance(packet,MMPServerLoginRejPacket)
 
     def handlePacket(self,packet):
-        print "[-] Login rejected: %s"%packet.reason
+        self.protocol.callback.failedToLogin(packet.reason)
 
 class MMPHelloAckHandler(MMPBaseHandler):
     def __init__(self, protocol, seq):
@@ -41,7 +66,8 @@ class MMPHelloAckHandler(MMPBaseHandler):
     def handlePacket(self,packet):
         self.protocol.startHeartbeat(packet.interval)
         header = self.protocol.createHeader()
-        packet = MMPClientLogin2Packet(header,"johann-the-builder@mail.ru","buildpleasemail")
+        loginPassword = self.protocol.callback.loginPassword()
+        packet = MMPClientLogin2Packet(header,loginPassword[0],loginPassword[1])
         self.protocol.addHandler(MMPLogin2RejHandler(self.protocol,header.seq))
         self.protocol.addHandler(MMPLogin2AckHandler(self.protocol,header.seq))
         self.protocol.sendPacket(packet)
@@ -55,6 +81,13 @@ class MMPMessageAckHandler(MMPBaseHandler):
         return isinstance(packet,MMPServerMessageAckPacket)
 
     def handlePacket(self,packet):
+
+        if packet.simple_message():   
+            self.protocol.callback.message(packet.from_email,packet.message)
+
+        if packet.flag_set(MESSAGE_FLAG_NORECV):
+            return
+
         header = self.protocol.createHeader()
         header.seq = packet.header.seq
         msgReceivedPacket = MMPClientMessageRecvPacket(header,packet.from_email,packet.msgid)
@@ -70,10 +103,7 @@ class MMPIncomingAuthorizationHandler(MMPBaseHandler):
                packet.flag_set(MESSAGE_FLAG_AUTHORIZE)
 
     def handlePacket(self,packet):
-        print "[+] Authorization request received from %s"%packet.from_email 
-        header = self.protocol.createHeader()
-        authorizePacket = MMPClientAuthorizePacket(header,packet.from_email)
-        self.protocol.sendPacket(authorizePacket)
+        self.protocol.callback.authrizationRequest(packet.from_email)
 
 class MMPDispatcherMixin(object):
 
@@ -107,7 +137,10 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
     MMP protocol implementation
     """
 
-    def __init__(self):
+    def __init__(self,callback):
+        callback.protocol = self
+        self.callback = callback
+        self.heartbeat = None
         self.handlers = []
         self.supported_server_packets = [MMPServerHelloAckPacket,
                                          MMPServerLoginAckPacket,
@@ -122,13 +155,12 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
         self.addHandler(MMPIncomingAuthorizationHandler(self))
 
     def connectionMade(self):
-        print "[+] Connected"
         packet = MMPClientHelloPacket(self.createHeader())
         self.addHandler(MMPHelloAckHandler(self,packet.header.seq))
         self.sendPacket(packet)
     
     def connectionLost(self,reason):
-        print "[-] Disconnected"
+        self.stopHeartbeat()
 
     def dataReceived(self,data):
         self.buffer += data
@@ -146,14 +178,31 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
     def sendPacket(self,packet):
        self.transport.write(packet.binary_data())
 
+    def sendMessage(self,to_email,message):
+        """ 
+        message expected to be in ascii
+        rtf not supported
+        """
+        header = self.createHeader()
+        packet = MMPClientMessagePacket(header,0,to_email,message)
+        self.sendPacket(packet)
+
+    def authorize(self,email):
+        header = self.createHeader()
+        authorizePacket = MMPClientAuthorizePacket(header,email)
+        self.sendPacket(authorizePacket)
+
     def startHeartbeat(self,interval):
-        heartbeat = task.LoopingCall(self._sendHeartbeat)
-        heartbeat.start(interval, now = False)
+        self.stopHeartbeat()
+        self.heartbeat = task.LoopingCall(self._sendHeartbeat)
+        self.heartbeat.start(interval, now = False)
+
+    def stopHeartbeat(self):
+        if self.heartbeat: self.heartbeat.stop()
 
     def _sendHeartbeat(self):
         header = self.createHeader()
         packet = MMPClientPingPacket(header)
-        print "[+] Sending heartbeat"
         self.sendPacket(packet)
 
     def _extractHeader(self):
@@ -163,7 +212,7 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
         self.buffer = self.buffer[MMPHeader.size:]
         self.header = MMPHeader.from_binary_data(header_data)
         self.mode = MMPMode.Body
-        print "[+] Header received %s"%self.header
+        #print "[+] Header received %s"%self.header
         self._extractBody()
 
     def _extractBody(self):
@@ -173,11 +222,13 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
         self.buffer = self.buffer[self.header.dlen:]
         self.mode = MMPMode.Header 
 
-        print "[+] Payload: %s"%payload.encode('hex')
+        #print "[+] Payload: %s"%payload.encode('hex')
 
         self.handlePacket(self.header,payload)
         self._extractHeader()
 
-class MMPClientFactory(protocol.ClientFactory):
+class MMPClientFactory(protocol.ReconnectingClientFactory):
+    def __init__(self,callback):
+        self.callback = callback
     def buildProtocol(self, address):
-        return MMPProtocol()
+        return MMPProtocol(self.callback)

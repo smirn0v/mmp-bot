@@ -3,6 +3,20 @@ import mmp_protocol
 import telnetlib
 import sys
 
+class MMPBot(mmp_protocol.MMPCallbackBase):
+    def __init__(self):
+        super(MMPBot,self).__init__()
+
+    def loginPassword(self):
+        return ("johann-the-builder@mail.ru","buildpleasemail")
+
+    def authrizationRequest(self,from_email):
+        self.protocol.authorize(from_email)
+
+    def message(self,from_email,message):
+        print "%s: %s"%(from_email,message)
+        
+
 def server_to_connect():
     telnet = telnetlib.Telnet("mrim.mail.ru",2042)
     address = telnet.read_all()
@@ -27,7 +41,7 @@ def main():
     
     print "[+] Host = %s; Port = %d"%(host,int(port))
 
-    reactor.connectTCP(host, port, mmp_protocol.MMPClientFactory())
+    reactor.connectTCP(host, port, mmp_protocol.MMPClientFactory(MMPBot()))
     reactor.run()
     
 if __name__ == "__main__":
