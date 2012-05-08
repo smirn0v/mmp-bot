@@ -57,21 +57,23 @@ class MMPMessageAckHandler(MMPBaseHandler):
     def handlePacket(self,packet):
         header = self.protocol.createHeader()
         header.seq = packet.header.seq
-        msgReceivedPacket = MMPClientMessageRecv(header,packet.from_email,packet.msgid)
+        msgReceivedPacket = MMPClientMessageRecvPacket(header,packet.from_email,packet.msgid)
         self.protocol.sendPacket(msgReceivedPacket)
 
 class MMPIncomingAuthorizationHandler(MMPBaseHandler):
     def __init__(self,protocol):
-        super(MMPMessageAckHandler,self).__init__(protocol)
+        super(MMPIncomingAuthorizationHandler,self).__init__(protocol)
         self.auto_remove_handler = False
 
     def canHandlePacket(self,packet):
-        return packet.header.seq == self.seq and \
-               isinstance(packet,MMPServerMessageAckPacket) and \
+        return isinstance(packet,MMPServerMessageAckPacket) and \
                packet.flag_set(MESSAGE_FLAG_AUTHORIZE)
 
     def handlePacket(self,packet):
         print "[+] Authorization request received from %s"%packet.from_email 
+        header = self.protocol.createHeader()
+        authorizePacket = MMPClientAuthorizePacket(header,packet.from_email)
+        self.protocol.sendPacket(authorizePacket)
 
 class MMPDispatcherMixin(object):
 
@@ -117,6 +119,7 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
         self.seq = 1
             
         self.addHandler(MMPMessageAckHandler(self))
+        self.addHandler(MMPIncomingAuthorizationHandler(self))
 
     def connectionMade(self):
         print "[+] Connected"
@@ -125,7 +128,7 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
         self.sendPacket(packet)
     
     def connectionLost(self,reason):
-        pass
+        print "[-] Disconnected"
 
     def dataReceived(self,data):
         self.buffer += data
@@ -150,6 +153,7 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
     def _sendHeartbeat(self):
         header = self.createHeader()
         packet = MMPClientPingPacket(header)
+        print "[+] Sending heartbeat"
         self.sendPacket(packet)
 
     def _extractHeader(self):
@@ -165,7 +169,6 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
     def _extractBody(self):
         if len(self.buffer) < self.header.dlen:
             return
-        print "[+] Body received, len = %d"%self.header.dlen
         payload = self.buffer[:self.header.dlen]
         self.buffer = self.buffer[self.header.dlen:]
         self.mode = MMPMode.Header 

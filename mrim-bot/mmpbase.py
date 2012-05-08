@@ -96,8 +96,6 @@ class PackingMixin(object):
         return result
 
     def unpack_with_mask(self,mask):
-        if mask:
-            print "mask = %s"%mask
         result = []
         for symbol in mask:
             if symbol=='u': result.append(self.unpack_uint())
@@ -112,10 +110,21 @@ class PackingMixin(object):
     def pack_uint(self,value):
         return struct.pack('I',value)
 
+class MMPClientAuthorizePacket(PackingMixin):
+    msg = MRIM_CS_AUTHORIZE
+    def __init__(self,header,email):
+        self.header = header
+        self.header.msg = self.__class__.msg
+        self.email = email
+        self.header.dlen = len(self.binary_data()) - MMPHeader.size 
+    def binary_data(self):
+        return self.header.binary_data()+self.pack_lps(self.email)
+
 class MMPClientPingPacket(object):
     msg = MRIM_CS_PING
     def __init__(self,header):
         self.header = header
+        self.header.msg = self.__class__.msg
         self.header.dlen = 0
 
     def binary_data(self):
@@ -157,7 +166,7 @@ class MMPClientMessageRecvPacket(PackingMixin):
     def binary_data(self):
         data = self.header.binary_data()
         data += self.pack_lps(self.from_email) 
-        data += self.pack_uint(msgid)
+        data += self.pack_uint(self.msgid)
         return data
 
 class MMPServerHelloAckPacket(PackingMixin):
