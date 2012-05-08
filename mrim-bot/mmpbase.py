@@ -1,3 +1,7 @@
+#
+# Alexander Smirnov (alexander@smirn0v.ru)
+#
+
 from mmptypes import *
 import struct
 

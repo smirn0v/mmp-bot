@@ -2,6 +2,26 @@ from mmpbase import *
 from twisted.internet import reactor, protocol, task
 from twisted.persisted import styles
 from twisted.protocols import basic
+import telnetlib
+
+class MMPInvalidEndpoint(Exception):
+    pass
+
+def connection_endpoint():
+    telnet = telnetlib.Telnet("mrim.mail.ru",2042)
+    address = telnet.read_all()
+    telnet.close()
+
+    host,port = address.split(":")
+
+    if host == None or port == None or \
+       len(port) < 2 or port[-1] != '\n': 
+        raise MMPInvalidEndpoint,"Invalid mrim server response"
+
+    port = port[:-1] #trim '\n'
+    if not port.isdigit(): raise MMPInvalidEndpoint,"Invalid mrim server response"
+
+    return host,int(port) 
 
 class MMPCallbackBase(object):
     def __init__(self):
@@ -67,7 +87,7 @@ class MMPHelloAckHandler(MMPBaseHandler):
         self.protocol.startHeartbeat(packet.interval)
         header = self.protocol.createHeader()
         loginPassword = self.protocol.callback.loginPassword()
-        packet = MMPClientLogin2Packet(header,loginPassword[0],loginPassword[1])
+        packet = MMPClientLogin2Packet(header,loginPassword[0].encode('ascii'),loginPassword[1].encode('ascii'))
         self.protocol.addHandler(MMPLogin2RejHandler(self.protocol,header.seq))
         self.protocol.addHandler(MMPLogin2AckHandler(self.protocol,header.seq))
         self.protocol.sendPacket(packet)
