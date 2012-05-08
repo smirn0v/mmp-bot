@@ -16,10 +16,10 @@ def connection_endpoint():
 
     if host == None or port == None or \
        len(port) < 2 or port[-1] != '\n': 
-        raise MMPInvalidEndpoint,"Invalid mrim server response"
+        raise MMPInvalidEndpoint, "Invalid mrim server response"
 
     port = port[:-1] #trim '\n'
-    if not port.isdigit(): raise MMPInvalidEndpoint,"Invalid mrim server response"
+    if not port.isdigit(): raise MMPInvalidEndpoint, "Invalid mrim server response"
 
     return host,int(port) 
 
@@ -88,8 +88,10 @@ class MMPHelloAckHandler(MMPBaseHandler):
         header = self.protocol.createHeader()
         loginPassword = self.protocol.callback.loginPassword()
         packet = MMPClientLogin2Packet(header,loginPassword[0].encode('ascii'),loginPassword[1].encode('ascii'))
+
         self.protocol.addHandler(MMPLogin2RejHandler(self.protocol,header.seq))
         self.protocol.addHandler(MMPLogin2AckHandler(self.protocol,header.seq))
+
         self.protocol.sendPacket(packet)
 
 class MMPMessageAckHandler(MMPBaseHandler):
@@ -232,7 +234,7 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
         self.buffer = self.buffer[MMPHeader.size:]
         self.header = MMPHeader.from_binary_data(header_data)
         self.mode = MMPMode.Body
-        #print "[+] Header received %s"%self.header
+        print "[+] Header received %s"%self.header
         self._extractBody()
 
     def _extractBody(self):
@@ -242,7 +244,7 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
         self.buffer = self.buffer[self.header.dlen:]
         self.mode = MMPMode.Header 
 
-        #print "[+] Payload: %s"%payload.encode('hex')
+        print "[+] Payload: %s"%payload.encode('hex')
 
         self.handlePacket(self.header,payload)
         self._extractHeader()
@@ -251,4 +253,5 @@ class MMPClientFactory(protocol.ReconnectingClientFactory):
     def __init__(self,callback):
         self.callback = callback
     def buildProtocol(self, address):
+        self.resetDelay()
         return MMPProtocol(self.callback)
