@@ -17,10 +17,10 @@ class MMPBot(mmpprotocol.MMPCallbackBase):
         self.config = json.load(json_data)
         json_data.close()
         self.handlers = { 
-                            "say!":     [self.say,"произнести текст"],
-                            "allow!":   [self.allow,"разрешить авторизацию пользователя"],
-                            "allowed!": [self.allowed,"вывести список людей, которым доступна авторизация"],
-                            "about!":   [self.about,"вывести информацию о Johann'е"],
+                            "say":     [self.say,"произнести текст"],
+                            "allow":   [self.allow,"разрешить авторизацию пользователя"],
+                            "white list": [self.allowed,"вывести список людей, которым доступна авторизация"],
+                            "about":   [self.about,"вывести информацию о Johann'е"],
                             "help":     [self.help_command,"вывести это сообщение"]
                         }
 
