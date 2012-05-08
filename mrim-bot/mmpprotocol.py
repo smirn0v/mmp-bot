@@ -56,10 +56,11 @@ class MMPBaseHandler(object):
 class MMPLogin2AckHandler(MMPBaseHandler):
     def __init__(self, protocol, seq):
         super(MMPLogin2AckHandler,self).__init__(protocol)
+        self.packet_class = MMPServerLoginAckPacket
         self.seq = seq
 
     def canHandlePacket(self,packet):
-        return packet.header.seq == self.seq and isinstance(packet,MMPServerLoginAckPacket) 
+        return packet.header.seq == self.seq and isinstance(packet,self.packet_class) 
 
     def handlePacket(self,packet):
         self.protocol.callback.loggedIn()
@@ -67,10 +68,11 @@ class MMPLogin2AckHandler(MMPBaseHandler):
 class MMPLogin2RejHandler(MMPBaseHandler):
     def __init__(self,protocol,seq):
         super(MMPLogin2RejHandler,self).__init__(protocol)
+        self.packet_class = MMPServerLoginRejPacket
         self.seq = seq 
 
     def canHandlePacket(self,packet):
-        return packet.header.seq == self.seq and isinstance(packet,MMPServerLoginRejPacket)
+        return packet.header.seq == self.seq and isinstance(packet,self.packet_class)
 
     def handlePacket(self,packet):
         self.protocol.callback.failedToLogin(packet.reason)
@@ -78,10 +80,11 @@ class MMPLogin2RejHandler(MMPBaseHandler):
 class MMPHelloAckHandler(MMPBaseHandler):
     def __init__(self, protocol, seq):
         super(MMPHelloAckHandler,self).__init__(protocol)
+        self.packet_class = MMPServerHelloAckPacket
         self.seq = seq
     
     def canHandlePacket(self,packet):
-        return packet.header.seq == self.seq and isinstance(packet,MMPServerHelloAckPacket) 
+        return packet.header.seq == self.seq and isinstance(packet,self.packet_class) 
 
     def handlePacket(self,packet):
         self.protocol.startHeartbeat(packet.interval)
@@ -97,10 +100,11 @@ class MMPHelloAckHandler(MMPBaseHandler):
 class MMPMessageAckHandler(MMPBaseHandler):
     def __init__(self,protocol):
         super(MMPMessageAckHandler,self).__init__(protocol)
+        self.packet_class = MMPServerMessageAckPacket
         self.auto_remove_handler = False
     
     def canHandlePacket(self,packet):
-        return isinstance(packet,MMPServerMessageAckPacket)
+        return isinstance(packet,self.packet_class)
 
     def handlePacket(self,packet):
 
@@ -118,10 +122,11 @@ class MMPMessageAckHandler(MMPBaseHandler):
 class MMPIncomingAuthorizationHandler(MMPBaseHandler):
     def __init__(self,protocol):
         super(MMPIncomingAuthorizationHandler,self).__init__(protocol)
+        self.packet_class = MMPServerMessageAckPacket
         self.auto_remove_handler = False
 
     def canHandlePacket(self,packet):
-        return isinstance(packet,MMPServerMessageAckPacket) and \
+        return isinstance(packet,self.packet_class) and \
                packet.flag_set(MESSAGE_FLAG_AUTHORIZE)
 
     def handlePacket(self,packet):
@@ -133,7 +138,8 @@ class MMPDispatcherMixin(object):
         self.handlers += [handler]
 
     def formPacket(self,header,payload):
-        for packet_class in self.supported_server_packets:
+        packet_classes = [h.packet_class for h in self.handlers]
+        for packet_class in packet_classes:
             if packet_class.msg == header.msg:
                 return packet_class(header,payload) 
         return None 
@@ -164,11 +170,6 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
         self.callback = callback
         self.heartbeat = None
         self.handlers = []
-        self.supported_server_packets = [MMPServerHelloAckPacket,
-                                         MMPServerLoginAckPacket,
-                                         MMPServerLoginRejPacket,
-                                         MMPServerMessageAckPacket,
-                                         MMPServerContactListPacket]
         self.buffer = ""
         self.mode = MMPMode.Header
         self.seq = 1
@@ -206,7 +207,7 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
         rtf not supported
         """
         header = self.createHeader()
-        packet = MMPClientMessagePacket(header,0,to_email,message)
+        packet = MMPClientMessagePacket(header,0,to_email,message.decode('utf8').encode('cp1251'))
         self.sendPacket(packet)
 
     def authorize(self,email):

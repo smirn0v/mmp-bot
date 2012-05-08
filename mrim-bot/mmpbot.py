@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# -*- coding: utf8 -*-
 
 import mmpprotocol
 import json
@@ -16,8 +17,11 @@ class MMPBot(mmpprotocol.MMPCallbackBase):
         self.config = json.load(json_data)
         json_data.close()
         self.handlers = { 
-                            "say": self.say,
-                            "allow": self.allow
+                            "say!":     [self.say,"произнести текст"],
+                            "allow!":   [self.allow,"разрешить авторизацию пользователя"],
+                            "allowed!": [self.allowed,"вывести список людей, которым доступна авторизация"],
+                            "about!":   [self.about,"вывести информацию о Johann'е"],
+                            "help":     [self.help_command,"вывести это сообщение"]
                         }
 
     def loginPassword(self):
@@ -29,26 +33,38 @@ class MMPBot(mmpprotocol.MMPCallbackBase):
 
     def message(self,from_email,message):
         print "%s: %s" % (from_email, message)
-        for command in self.handlers.keys():
+        for command in self.handlers:
             if message.startswith(command):
-                self.handlers[command](from_email,message[len(command)+1:])
+                self.handlers[command][0](from_email,message[len(command)+1:])
 
     def say(self,from_email,text):
         tempFile = NamedTemporaryFile(delete=False) 
         tempFile.write(text)
         tempFile.close()
-        call("cat %s | say"%tempFile.name,shell=True) 
+        call("cat %s | say" % tempFile.name,shell=True) 
         os.remove(tempFile.name)
-        self.protocol.sendMessage(from_email, "Ok")
+        self.protocol.sendMessage(from_email, "сказал")
 
     def allow(self,from_email,email):
         email = email.strip()
+        if not email: return
         self.config["allowed_emails"] += [email]
-        self.protocol.sendMessage(from_email, "added %s" % email)
+        self.protocol.sendMessage(from_email, "добавил %s" % email)
+
+    def allowed(self,from_email,args):
+        self.protocol.sendMessage(from_email,"%r" % self.config["allowed_emails"])
+
+    def about(self,from_email,args):
+        self.protocol.sendMessage(from_email,"Johann - Mail.Ru build bot by Alexander Smirnov (alexander@smirn0v.ru)")
+
+    def help_command(self,from_email,args):
+        reply = "Поддерживаемые команды: \n"
+        reply += "\n".join([k+" - %s"%v[1] for k,v in self.handlers.iteritems()])
+        self.protocol.sendMessage(from_email,reply)
 
 class BotDaemon(Daemon):
     def __init__(self,pidfile):
-        super(BotDaemon,self).__init__(pidfile,stdout='/tmp/mrim-bot-out.log',stderr='/tmp/mrim-bot.log')
+        super(BotDaemon,self).__init__(pidfile,stdout='/tmp/mmp-bot-out.log',stderr='/tmp/mmp-bot.log')
         self.configPath = None
     def run(self):
         host, port = mmpprotocol.connection_endpoint()
@@ -56,7 +72,7 @@ class BotDaemon(Daemon):
         reactor.run()
 
 if __name__ == "__main__":
-    daemon = BotDaemon('/tmp/mrim-bot.pid')
+    daemon = BotDaemon('/tmp/mmp-bot.pid')
     if len(sys.argv) == 2:
         if 'start' == sys.argv[1]:
             daemon.configPath = os.path.abspath("config.json")
