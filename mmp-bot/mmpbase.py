@@ -1,9 +1,10 @@
 #
 # Alexander Smirnov (alexander@smirn0v.ru)
 #
-
 from mmptypes import *
 import struct
+
+__metaclass__  = type
 
 MMP_CLIENT_STRING = "MRIM Johann Bot v0.1"
 
@@ -13,7 +14,7 @@ class MMPWrongHeaderData(Exception):
 class MMPMalformedPacket(Exception):
     pass
 
-class MMPHeader(object):
+class MMPHeader:
     size = 44 # usual MMP header size as stated in 
               # protocol specification
     format = '7I16B'
@@ -57,12 +58,12 @@ class MMPHeader(object):
                                              self.dlen,
                                              *([0]*18))
 
-class MMPGroup(object):
+class MMPGroup:
     def __init__(self,flags,name):
         self.flags = flags
         self.name = name
 
-class MMPContact(object):
+class MMPContact:
     def __init__(self,flags,group,address,nickname,server_flags,status):
         self.flags = flags
         self.group = group
@@ -71,7 +72,7 @@ class MMPContact(object):
         self.server_flags = server_flags
         self.status = status
 
-class PackingMixin(object):
+class PackingMixin:
     def unpack_lps(self):
         size_length = struct.calcsize('I')
         if len(self.binary_data) < size_length:
@@ -146,7 +147,7 @@ class MMPClientAuthorizePacket(PackingMixin):
     def binary_data(self):
         return self.header.binary_data()+self.pack_lps(self.email)
 
-class MMPClientPingPacket(object):
+class MMPClientPingPacket:
     msg = MRIM_CS_PING
     def __init__(self,header):
         self.header = header
@@ -156,7 +157,7 @@ class MMPClientPingPacket(object):
     def binary_data(self):
         return self.header.binary_data()
 
-class MMPClientHelloPacket(object):
+class MMPClientHelloPacket:
     msg = MRIM_CS_HELLO
     def __init__(self,header):
         self.header = header

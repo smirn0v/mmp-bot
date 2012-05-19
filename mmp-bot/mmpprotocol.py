@@ -4,6 +4,8 @@ from twisted.persisted import styles
 from twisted.protocols import basic
 import telnetlib
 
+__metaclass__ = type
+
 class MMPInvalidEndpoint(Exception):
     pass
 
@@ -23,7 +25,7 @@ def connection_endpoint():
 
     return host,int(port) 
 
-class MMPCallbackBase(object):
+class MMPCallbackBase:
     def __init__(self):
         self.protocol = None
     def loginPassword(self):
@@ -48,7 +50,7 @@ class MMPCallbackBase(object):
         called if authorization request was received
         """
 
-class MMPBaseHandler(object):
+class MMPBaseHandler:
     def __init__(self, protocol):
         self.auto_remove_handler = True
         self.protocol = protocol
@@ -132,7 +134,7 @@ class MMPIncomingAuthorizationHandler(MMPBaseHandler):
     def handlePacket(self,packet):
         self.protocol.callback.authrizationRequest(packet.from_email)
 
-class MMPDispatcherMixin(object):
+class MMPDispatcherMixin:
 
     def addHandler(self,handler):
         self.handlers += [handler]
