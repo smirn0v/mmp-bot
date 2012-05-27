@@ -66,6 +66,9 @@ exit_if_error "Failed to zip 'Payload'"
 cd -
 exit_if_error "Failed to change directory to original"
 
+mkdir "$ResultName"
+exit_if_error "Failed to create artifact dir"
+
 cp "$BuildDir"/"$ResultName".ipa "$ResultName"/
 exit_if_error "Failed to copy 'ipa'"
 
