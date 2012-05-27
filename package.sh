@@ -12,8 +12,8 @@ function usage {
     echo ""
     echo "Following is resulting package structure:"
     echo ""
-    echo "<ResultName>.zip/DSYM/<ResultName>.dSYM"
-    echo "<ResultName>.zip/<ResultName>.ipa"
+    echo "<ResultName>/<ResultName>.dSYM"
+    echo "<ResultName>/<ResultName>.ipa"
     echo ""
 }
 
@@ -45,9 +45,9 @@ DSYMFolder="$2"
 ResultName="$3"
 InitialDir=`pwd`
 
-if [ -f "$ResultName".zip ]
+if [ -d "$ResultName" ]
 then
-    rm "$ResultName".zip
+    rm -rf "$ResultName"
     exit_if_error "Failed removing previous package"
 fi
 
@@ -57,25 +57,19 @@ exit_if_error "Failed to change dir"
 mkdir Payload
 exit_if_error "Failed to create 'Payload' directory'"
 
-mkdir DSYM
-exit_if_error "Failded to create 'DSYM' directory"
-
 cp -rp "$InitialDir"/"$AppFolder" Payload/
 exit_if_error "Failed to copy application bundle into 'Payload' folder"
 
 zip -ry "$ResultName".ipa Payload
 exit_if_error "Failed to zip 'Payload'"
 
-cp -rp "$InitialDir"/"$DSYMFolder" DSYM/
-exit_if_error "Failed to copy 'dsym' into destination folder'"
-
-zip -ry "$ResultName".zip "$ResultName".ipa DSYM
-exit_if_error "Failed to create final 'zip'"
-
 cd -
 exit_if_error "Failed to change directory to original"
 
-cp "$BuildDir"/"$ResultName".zip .
-exit_if_error "Failed to copy resulting package"
+cp "$BuildDir"/"$ResultName".ipa "$ResultName"/
+exit_if_error "Failed to copy 'ipa'"
+
+cp -rp "$InitialDir"/"$DSYMFolder" "$ResultName"/"$ResultName".dSYM
+exit_if_error "Failed to copy 'dSYM'"
 
 remove_build_dir
