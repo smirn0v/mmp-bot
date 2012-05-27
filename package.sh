@@ -43,6 +43,7 @@ fi
 AppFolder="$1"
 DSYMFolder="$2"
 ResultName="$3"
+InitialDir=`pwd`
 
 if [ -f "$ResultName".zip ]
 then
@@ -59,13 +60,13 @@ exit_if_error "Failed to create 'Payload' directory'"
 mkdir DSYM
 exit_if_error "Failded to create 'DSYM' directory"
 
-cp -rp "$AppFolder" Payload/
+cp -rp "$InitialDir"/"$AppFolder" Payload/
 exit_if_error "Failed to copy application bundle into 'Payload' folder"
 
 zip -ry "$ResultName".ipa Payload
 exit_if_error "Failed to zip 'Payload'"
 
-cp -rp "$DSYMFolder" DSYM/
+cp -rp "$InitialDir"/"$DSYMFolder" DSYM/
 exit_if_error "Failed to copy 'dsym' into destination folder'"
 
 zip -ry "$ResultName".zip "$ResultName".ipa DSYM
