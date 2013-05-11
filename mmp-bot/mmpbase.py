@@ -224,8 +224,8 @@ class MMPServerMessageAckPacket(PackingMixin):
         self.flags = self.unpack_uint()
         self.from_email = self.unpack_lps()
         self.message = self.unpack_lps()
-        if self.flag_set(MESSAGE_FLAG_RTF):
-            self.rtf_message = self.unpack_lps()
+        #if self.flag_set(MESSAGE_FLAG_RTF):
+        #    self.rtf_message = self.unpack_lps()
     def flag_set(self,flag):
         return (self.flags | flag) == self.flags
     def simple_message(self):
