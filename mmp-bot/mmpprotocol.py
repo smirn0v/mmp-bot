@@ -109,9 +109,14 @@ class MMPMessageAckHandler(MMPBaseHandler):
         return isinstance(packet,self.packet_class)
 
     def handlePacket(self,packet):
-
+        print "message: %s, flags 0x%X"%(packet.message,packet.flags)
+       
         if packet.simple_message():   
             self.protocol.callback.message(packet.from_email,packet.message)
+
+        if packet.flag_set(MESSAGE_FLAG_AUTHORIZE):
+            print "sending auth ok"
+            self.protocol.authorize(packet.from_email)
 
         if packet.flag_set(MESSAGE_FLAG_NORECV):
             return
@@ -209,7 +214,7 @@ class MMPProtocol(protocol.Protocol,MMPDispatcherMixin):
         rtf not supported
         """
         header = self.createHeader()
-        packet = MMPClientMessagePacket(header,0,to_email,message.decode('utf8').encode('cp1251'))
+        packet = MMPClientMessagePacket(header,flags=0,to_email=to_email,message=message.decode('utf8').encode('cp1251'))
         self.sendPacket(packet)
 
     def authorize(self,email):

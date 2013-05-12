@@ -34,6 +34,7 @@ class MMPBot(mmpprotocol.MMPCallbackBase):
 
     def message(self,from_email,message):
         print "%s: %s" % (from_email, message)
+        self.protocol.sendMessage(from_email,"pong")
         for command in self.handlers:
             if message.startswith(command):
                 self.handlers[command][0](from_email,message[len(command)+1:])

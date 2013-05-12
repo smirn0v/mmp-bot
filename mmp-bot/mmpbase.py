@@ -116,19 +116,55 @@ class PackingMixin:
     def pack_uint(self,value):
         return struct.pack('I',value)
 
+class MMPClientAddContact(PackingMixin):
+    msg = MRIM_CS_ADD_CONTACT
+
+    def __init__(self,header,binary_data=None,flags=None,groupid=None,email=None,name=None):
+        self.header = header
+        self.header.msg = self.__class__.msg
+        if binary_data is not None:
+            self.binary_data = binary_data
+            self.flags       = self.unpack_uint()
+            self.groupid     = self.unpack_uint()
+            self.email       = self.unpack_lps()
+            self.name        = self.unpack_lps()
+        else:
+            self.flags = flags
+            self.groupid = groupid
+            self.email = email
+            self.name  = name
+            self.header.dlen = len(self.binary_data()) - MMPHeader.size
+
+    def binary_data(self):
+        data  = self.header.binary_data()
+        data += self.pack_uint(self.flags)
+        data += self.pack_uint(self.groupid)
+        data += self.pack_lps(self.email) 
+        data += self.pack_lps(self.name)
+        return data
+
+    def __str__(self):
+        print "clnt add contact {flags = 0x%X, groupid = %d, email = %s, name = %s}"%(self.flags,self.groupid,self.email, self.name)
+
 class MMPClientMessagePacket(PackingMixin):
     msg = MRIM_CS_MESSAGE
-    def __init__(self,header,flags,to_email,message):
+    def __init__(self,header,binary_data=None,flags=None,to_email=None,message=None):
         """ 
         message should be given in ascii
         rtf messages not supported
         """
-        self.header = header
+        self.header   = header
         self.header.msg = self.__class__.msg
-        self.flags = flags
-        self.to_email = to_email
-        self.message = message
-        self.header.dlen = len(self.binary_data()) - MMPHeader.size
+        if binary_data is not None:
+            self.binary_data = binary_data
+            self.flags    = self.unpack_uint()
+            self.to_email = self.unpack_lps()
+            self.message  = self.unpack_lps() 
+        else:
+            self.flags = flags
+            self.to_email = to_email
+            self.message = message
+            self.header.dlen = len(self.binary_data()) - MMPHeader.size
 
     def binary_data(self):
         data  = self.header.binary_data()
@@ -136,6 +172,9 @@ class MMPClientMessagePacket(PackingMixin):
         data += self.pack_lps(self.to_email)
         data += self.pack_lps(self.message)
         return data
+
+    def __str__(self):
+        print "clnt msg {flags = 0x%X, to_email = %s, message = %s}"%(self.flags, self.to_email, self.message)
 
 class MMPClientAuthorizePacket(PackingMixin):
     msg = MRIM_CS_AUTHORIZE
@@ -146,6 +185,8 @@ class MMPClientAuthorizePacket(PackingMixin):
         self.header.dlen = len(self.binary_data()) - MMPHeader.size 
     def binary_data(self):
         return self.header.binary_data()+self.pack_lps(self.email)
+    def __str__(self):
+        print "authorize {email = %s}"%self.email
 
 class MMPClientPingPacket:
     msg = MRIM_CS_PING
@@ -195,6 +236,8 @@ class MMPClientMessageRecvPacket(PackingMixin):
         data += self.pack_lps(self.from_email) 
         data += self.pack_uint(self.msgid)
         return data
+    def __str__(self):
+        print "clnt message recv {from_email = %s, msgid = %d}"%(self.from_email,self.msgid)
 
 class MMPServerHelloAckPacket(PackingMixin):
     msg = MRIM_CS_HELLO_ACK
@@ -233,6 +276,8 @@ class MMPServerMessageAckPacket(PackingMixin):
                 not self.flag_set(MESSAGE_FLAG_CONTACT) and \
                 not self.flag_set(MESSAGE_FLAG_NOTIFY) and \
                 not self.flag_set(MESSAGE_FLAG_AUTHORIZE)
+    def __str__(self):
+        print "srv message ack {msgid = %d, flags = 0x%X, from_email = %s, message = %s}"%(self.msgid,self.flags,self.from_email,self.message)
 
 class MMPServerContactListPacket(PackingMixin):
     msg = MRIM_CS_CONTACT_LIST2
